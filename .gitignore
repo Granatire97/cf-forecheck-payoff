@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+*.duckdb
+data/*.duckdb
+!data/raw/olympic_womens_dataset.csv
