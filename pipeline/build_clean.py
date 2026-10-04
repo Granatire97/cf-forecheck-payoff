@@ -2,8 +2,7 @@ import duckdb
 from pathlib import Path
 from pipeline.config import DB_PATH
 
-
-
+# Function to transform/clean staging events
 def transform_events(con: duckdb.DuckDBPyConnection) -> None:
     """Events: rename, derive game, clock, strength, zone, then drop duplicates"""
     con.execute("""
@@ -69,6 +68,7 @@ def transform_events(con: duckdb.DuckDBPyConnection) -> None:
                 ELSE 0
             END AS is_shot
         FROM staging.events
+        WHERE league <> 'NCAA'
         ORDER BY event_id
     """)
 
@@ -83,6 +83,7 @@ def transform_events(con: duckdb.DuckDBPyConnection) -> None:
             )
     """)
 
+# function to call and run all cleaning tables. This is set up in case other csv are added
 def transform_all(db_path: Path = DB_PATH) -> None:
     """Run all transforms."""
     con = duckdb.connect(str(db_path))
