@@ -3,3 +3,4 @@ pandas
 dash
 dash-bootstrap-components
 gunicorn
+git+https://github.com/maxtixador/rink_plotly.git
