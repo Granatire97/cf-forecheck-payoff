@@ -1,0 +1,5 @@
+duckdb
+pandas
+dash
+dash-bootstrap-components
+gunicorn
