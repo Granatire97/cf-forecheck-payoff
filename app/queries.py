@@ -1,10 +1,9 @@
 import duckdb
-from pipeline.config import DB_PATH
-from pathlib import Path
+import pandas as pd
 
-def get_puck_wins(con: duckdb.DuckDBPyConnection) -> list:
+def get_puck_wins(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
-    sql = con.execute("""
+    result = con.execute("""
             SELECT 
                 x_coord - 100 AS plot_x,
                 y_coord - 42.5 AS plot_y,
@@ -12,19 +11,24 @@ def get_puck_wins(con: duckdb.DuckDBPyConnection) -> list:
                 win_type
             FROM warehouse.fact_puck_wins
     """)
+    return result.df()
 
-    return sql.df()
+def get_shot_rate_grid(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
-def main(db_path: Path = DB_PATH) -> list:
-    con = duckdb.connect(str(db_path), read_only=True)
-    try:
-        get_puck_wins(con)
-    finally:
-        con.close()
-
-    # one line summary to prove it works
-    with duckdb.connect(str(DB_PATH), read_only=True) as con:
-        print(con.sql("SELECT COUNT(*) AS wins, ROUND(AVG(led_to_shot::INT), 3) AS shot_rate FROM warehouse.fact_puck_wins"))
-
-if __name__ == "__main__":
-    main()
+    result = con.execute("""
+            WITH grid AS (
+            SELECT 
+                LEAST(FLOOR((x_coord - 125) / 15), 4) AS bx,
+                LEAST(FLOOR(y_coord / 17), 4) AS by_,
+                COUNT(*) AS n,
+                AVG(led_to_shot::INT) AS rate
+            FROM warehouse.fact_puck_wins
+            GROUP BY bx, by_
+            )
+            SELECT
+                *,
+                125 + bx * 15 + 7.5 - 100 AS cx,
+                by_ * 17 + 8.5 - 42.5 AS cy
+            FROM grid
+    """)
+    return result.df()
