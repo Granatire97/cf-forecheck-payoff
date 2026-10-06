@@ -1,12 +1,11 @@
 import duckdb
 import dash_bootstrap_components as dbc
-from dash import Dash, html, dcc
-import rink_plotly.rink_plot as rink_plot
+from dash import Dash, html, dcc, Input, Output, dash_table
+from dash.dash_table.Format import Format, Scheme
 from pipeline.config import DB_PATH
-import plotly.graph_objects as go
 import pandas as pd
-from vizro.figures.library import kpi_card
-from app.queries import get_puck_wins, get_shot_rate_grid
+from app.queries import get_puck_wins, get_shot_rate_grid, get_teams, get_strength_state, get_players, get_player_table
+from app.components.rink import build_rink
 
 with duckdb.connect(str(DB_PATH), read_only=True) as con:
     # KPI values
@@ -25,25 +24,17 @@ with duckdb.connect(str(DB_PATH), read_only=True) as con:
 
     # Dfs for graphs/visuals/tables
     df = get_puck_wins(con)
-    df2 = get_shot_rate_grid(con)
+    teams = get_teams(con)
+    strength = get_strength_state(con)
+    players = get_players(con)
+    player_table = get_player_table(con)
+    #df2 = get_shot_rate_grid(con, teams)
 
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
 server = app.server  # what the host runs when deployed
-rink_fig = rink_plot.rink(setting='ozone', vertical=False)
-rink_fig.update_xaxes(range=[25, 101], constrain='domain')
-rink_fig.update_layout(height=500, margin=dict(l=0, r=0, t=0, b=0))
 
-wins_kpi = pd.DataFrame({'Total Wins': [wins]})
-
-# First Query to get points on the rink
-rink_fig.add_trace(go.Heatmap(
-    x=df2["cx"], y=df2["cy"], z=df2["rate"],
-    customdata=df2["n"],
-    colorscale="Blues", opacity=0.75,
-    colorbar=dict(title='Shot Rate', tickformat=".0%"), 
-    hovertemplate="%{z:.0%} led to a shot<br>%{customdata} wins<extra></extra>",))
-
+# Header HTML
 analytics_header = html.Div(
     style={
         "backgroundColor": "#0B192C",  # Deep navy color from the image
@@ -104,27 +95,57 @@ analytics_header = html.Div(
 app.layout = dbc.Container([
     # Application Title Bar
     analytics_header,
+
+    # Dropdowns for Filters
+    dbc.Row([
+        dbc.Col(
+            dbc.Card([
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.H5("Teams", className="card-title text-muted fw-bold"),
+                            dcc.Dropdown(id="team", options=teams, placeholder="All Teams", clearable=True)
+                            ], width=4),
+                        dbc.Col([
+                            html.H5("Players", className="card-title text-muted fw-bold"),
+                            dcc.Dropdown(id="player", options=players, placeholder="All Players", clearable=True)
+
+                        ], width=4),
+                        dbc.Col([
+                            html.H5("Strength", className="card-title text-muted fw-bold"),
+                            dcc.Dropdown(id="strength", options=[{"label": "Even Strength", "value":"EV"}, {"label": "Power Play", "value":"PP"},
+                                                                 {"label": "Penalty Kill", "value":"PK"}, {"label": "Opponent Empty Net", "value":"EN"},
+                                                                 {"label": "Extra Attacker", "value":"EA"}], placeholder="All Strength Options", clearable=True)
+
+                        ], width=4),
+                        ])
+                    ])
+                ], className="shadow-sm"), 
+                width=12
+            )
+        ], className="mt-4"),
+    # KPI rows
     dbc.Row([
         # KPIs
         dbc.Col(
             dbc.Card([
                 dbc.CardHeader("OZ puck wins"),
                 dbc.CardBody([
-                    html.H1(wins),
-                    html.P(f"{win_rate_count:.0f} of {wins} wins", style = {'fontSize': '12px'}, className="card-text"),
+                    html.H1(f"{wins:,}"),
+                    html.P("Placeholder", style = {'fontSize': '12px'}, className="card-text"),
                 ]),
-            ], style={"width": "18rem"}),
-            width="auto"
+            ]),
+            width=3
         ),
         dbc.Col(
             dbc.Card([
                 dbc.CardHeader("Led to a shot within 10s"),
                 dbc.CardBody([
-                    html.H1(f"{rate:.2%}"),
-                    html.P("Placeholder", style = {'fontSize': '12px'}, className="card-text"),
+                    html.H1(f"{rate:.1%}"),
+                    html.P(f"{win_rate_count:.0f} of {wins} wins", style = {'fontSize': '12px'}, className="card-text"),
                 ]),
-            ], style={"width": "18rem"}),
-            width="auto"
+            ]),
+            width=3
         ),
         dbc.Col(
             dbc.Card([
@@ -133,8 +154,8 @@ app.layout = dbc.Container([
                     html.H1(f"{seconds_to_shot[0]:.1f}s"),
                     html.P("Most shots come fast or not at all", style = {'fontSize': '12px'}, className="card-text"),
                 ]),
-            ], style={"width": "18rem"}),
-            width="auto"
+            ]),
+            width=3
         ),
         dbc.Col(
             dbc.Card([
@@ -143,15 +164,55 @@ app.layout = dbc.Container([
                     html.H1(goals),
                     html.P(f"{rebound[0]} of them off rebounds", style = {'fontSize': '12px'}, className="card-text"),
                 ]),
-            ], style={"width": "18rem"}),
-            width="auto"
+            ]),
+            width=3
         ),
-        ]),
-    dcc.Graph(
-        id='hockey-rink',
-        figure=rink_fig
-    )
+    ], className="mt-4"),
+
+    # Rink Graph
+    dbc.Row([
+        dbc.Col(
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("Where puck wins pay off"),
+                    dcc.Graph(id='hockey-rink',)
+                ]),
+            ]),
+            width=12
+        ),
+    ], className = "mt-4"),
+    dbc.Row([
+        dbc.Col(
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("Players who turn wins into shots"),
+                    dash_table.DataTable(
+                        data=player_table.to_dict('records'),
+                        columns = [{"name": "Player", "id": "Player"}, {"name": "Team", "id": "Team"}, 
+                                   {"name": "OZ Wins", "id": "OZ Wins"}, {"name": "Led To Shot", "id": "Led To Shot"},
+                                    {"name": "Rate", "id": "Rate", "type": "numeric", "format": Format(precision=1, scheme=Scheme.percentage)}],
+                        style_table={'height': '400px', 'overflowY': 'auto', 'overflowX': 'auto'},
+                        editable=False,
+                        filter_action="native",
+                        sort_action="native",
+                        sort_mode="multi",
+                        column_selectable="single",
+                        row_selectable=False,
+                        page_action="native", 
+                        page_current= 0,
+                        page_size= 25
+                    )
+                ])
+            ])
+        )
+    ], className="mt-4")
 ])
+
+@app.callback(Output("hockey-rink", "figure"), Input("team", "value"), Input("player", "value"), Input("strength", "value"))
+def update_rink(team, player, strength):
+    with duckdb.connect(str(DB_PATH), read_only=True) as con2:
+        df2 = get_shot_rate_grid(con2, team, player, strength)
+    return build_rink(df2)
 
 if __name__ == "__main__":
     app.run(debug=True)
