@@ -1,10 +1,11 @@
 import duckdb
 import dash_bootstrap_components as dbc
 from dash import Dash, html, dcc, Input, Output, dash_table
+import plotly.express as px
 from dash.dash_table.Format import Format, Scheme
 from pipeline.config import DB_PATH
 import pandas as pd
-from app.queries import get_puck_wins, get_shot_rate_grid, get_teams, get_strength_state, get_players, get_player_table
+from app.queries import get_puck_wins, get_shot_rate_grid, get_teams, get_strength_state, get_players, get_player_table, get_shot_rate_by_how_puck_win
 from app.components.rink import build_rink
 
 with duckdb.connect(str(DB_PATH), read_only=True) as con:
@@ -27,7 +28,7 @@ with duckdb.connect(str(DB_PATH), read_only=True) as con:
     teams = get_teams(con)
     strength = get_strength_state(con)
     players = get_players(con)
-    player_table = get_player_table(con)
+    #player_table = get_player_table(con)
     #df2 = get_shot_rate_grid(con, teams)
 
 
@@ -169,7 +170,7 @@ app.layout = dbc.Container([
         ),
     ], className="mt-4"),
 
-    # Rink Graph
+    # Rink Graph & Shot Rate Graph
     dbc.Row([
         dbc.Col(
             dbc.Card([
@@ -178,7 +179,16 @@ app.layout = dbc.Container([
                     dcc.Graph(id='hockey-rink',)
                 ]),
             ]),
-            width=12
+            width=6
+        ),
+        dbc.Col(
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("Shot rate by how the puck was won"),
+                    dcc.Graph(id='shot-rate-won',)
+                ]),
+            ]),
+            width=6
         ),
     ], className = "mt-4"),
     dbc.Row([
@@ -187,7 +197,7 @@ app.layout = dbc.Container([
                 dbc.CardBody([
                     html.H4("Players who turn wins into shots"),
                     dash_table.DataTable(
-                        data=player_table.to_dict('records'),
+                        id='player-table',
                         columns = [{"name": "Player", "id": "Player"}, {"name": "Team", "id": "Team"}, 
                                    {"name": "OZ Wins", "id": "OZ Wins"}, {"name": "Led To Shot", "id": "Led To Shot"},
                                     {"name": "Rate", "id": "Rate", "type": "numeric", "format": Format(precision=1, scheme=Scheme.percentage)}],
@@ -208,11 +218,31 @@ app.layout = dbc.Container([
     ], className="mt-4")
 ])
 
-@app.callback(Output("hockey-rink", "figure"), Input("team", "value"), Input("player", "value"), Input("strength", "value"))
-def update_rink(team, player, strength):
+@app.callback(Output("hockey-rink", "figure"), Output("shot-rate-won", "figure"), Output("player-table", "data"), Input("team", "value"), Input("player", "value"), Input("strength", "value"))
+def update_graphs(team, player, strength):
     with duckdb.connect(str(DB_PATH), read_only=True) as con2:
         df2 = get_shot_rate_grid(con2, team, player, strength)
-    return build_rink(df2)
+        event_shot_rate = get_shot_rate_by_how_puck_win(con2, team, player, strength)
+        player_table_df = get_player_table(con2, team, player, strength)
+
+    fig_rink = build_rink(df2)
+
+    fig_bar = px.bar(
+        event_shot_rate,
+        x = "rate",
+        y = "win_type",
+        orientation="h",
+        title="What happened right before the win",
+        text="rate",
+        color_discrete_sequence=["#1F4E8C"]
+    )
+    fig_bar.update_layout(yaxis={"categoryorder": "trace"}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=0, r=80, t=50, b=0))
+    x_max = event_shot_rate["rate"].max() if not event_shot_rate.empty else 1
+    fig_bar.update_xaxes(visible=False, title="", range=[0, x_max * 1.25])
+    fig_bar.update_yaxes(visible=True, title="")
+    fig_bar.update_traces(texttemplate="%{text:.1%}",textposition="outside")
+
+    return fig_rink, fig_bar, player_table_df.to_dict('records')
 
 if __name__ == "__main__":
     app.run(debug=True)

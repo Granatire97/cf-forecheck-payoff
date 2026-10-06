@@ -74,7 +74,7 @@ def get_strength_state(con: duckdb.DuckDBPyConnection) -> list[str]:
     """)
     return [r[0] for r in result.fetchall()]
 
-def get_player_table(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+def get_player_table(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None) -> pd.DataFrame:
 
     result = con.execute("""
             SELECT 
@@ -84,9 +84,39 @@ def get_player_table(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
                 SUM(led_to_shot) AS "Led To Shot", 
                 AVG(led_to_shot::INT) AS Rate
             FROM warehouse.fact_puck_wins fw
-            JOIN warehouse.dim_player p ON p.player_key = fw.event_player_key
+            JOIN warehouse.dim_team t
+                ON t.team_key = fw.event_team_key
+            JOIN warehouse.dim_player p
+                ON p.player_key = fw.event_player_key
+            WHERE ($team IS NULL OR t.team_name = $team)
+                AND ($player IS NULL OR p.player_name = $player)
+                AND ($strength IS NULL or fw.strength_state = $strength)
             GROUP BY p.player_name, p.team_name
-            HAVING COUNT(*) > 20
+            HAVING COUNT(*) >= CASE WHEN $player IS NOT NULL THEN 1
+                        WHEN $strength IS NOT NULL THEN 5
+                        ELSE 20 END
             ORDER BY COUNT(*) DESC
-    """)
+    """, {"team":team, "player":player, "strength":strength})
+    return result.df()
+
+def get_shot_rate_by_how_puck_win(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None) -> pd.DataFrame:
+
+    result = con.execute("""
+            SELECT
+                w.win_type,
+                MEDIAN(w.seconds_to_shot::INT) AS med_seconds_to_shot,
+                COUNT(*) FILTER (WHERE w.is_goal) AS total_goals,
+                COUNT(*) AS wins,
+                AVG(led_to_shot::INT) AS rate
+            FROM warehouse.fact_puck_wins w
+            JOIN warehouse.dim_team t
+                ON t.team_key = w.event_team_key
+            JOIN warehouse.dim_player p
+                ON p.player_key = w.event_player_key
+            WHERE ($team IS NULL OR t.team_name = $team)
+                AND ($player IS NULL OR p.player_name = $player)
+                AND ($strength IS NULL or w.strength_state = $strength)
+            GROUP BY w.win_type
+            ORDER BY rate
+    """, {"team":team, "player":player, "strength":strength})
     return result.df()
