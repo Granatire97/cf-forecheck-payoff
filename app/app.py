@@ -5,25 +5,22 @@ import plotly.express as px
 from dash.dash_table.Format import Format, Scheme
 from pipeline.config import DB_PATH
 import pandas as pd
-from app.queries import get_shot_rate_grid, get_teams, get_strength_state, get_players, get_player_table, get_shot_rate_by_how_puck_win, get_summary
+from app.queries import get_shot_rate_grid, get_teams, get_players, get_player_table, get_shot_rate_by_how_puck_win, get_summary
 from app.components.rink import build_rink
 
 with duckdb.connect(str(DB_PATH), read_only=True) as con:
-    # Dfs for graphs/visuals/tables
+    # Dropdown options
     teams = get_teams(con)
-    strength = get_strength_state(con)
     players = get_players(con)
-    #player_table = get_player_table(con)
-    #df2 = get_shot_rate_grid(con, teams)
 
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
-server = app.server  # what the host runs when deployed
+server = app.server
 
 # Header HTML
 analytics_header = html.Div(
     style={
-        "backgroundColor": "#0B192C",  # Deep navy color from the image
+        "backgroundColor": "#0B192C",
         "padding": "30px 40px",
         "borderBottom": "3px solid #1a252f",
         "fontFamily": "sans-serif"
@@ -160,19 +157,26 @@ app.layout = dbc.Container([
         dbc.Col(
             dbc.Card([
                 dbc.CardBody([
-                    html.H4("Where puck wins pay off"),
+                    html.Div(
+                        [
+                            html.H4("Where puck wins pay off", className="card-title text-muted mb-0 fw-bold"),
+                            html.Span("Shot rate by location - wins per cell (hover)", className="text-muted", style = {'fontSize': '12px'}),
+                        ],
+                            className="d-flex justify-content-between align-items-center",
+                    ),
                     dcc.Graph(id='hockey-rink',)
                 ]),
-            ]),
+            ], className="h-100"),
             width=6
         ),
         dbc.Col(
             dbc.Card([
                 dbc.CardBody([
-                    html.H4("Shot rate by how the puck was won"),
+                    html.H4("Shot rate by how the puck was won", className="card-title text-muted fw-bold"),
+                    html.H6("What happened right before the win", className="text-muted"),
                     dcc.Graph(id='shot-rate-won',)
                 ]),
-            ]),
+            ], className="h-100"),
             width=6
         ),
     ], className = "mt-4"),
@@ -180,7 +184,7 @@ app.layout = dbc.Container([
         dbc.Col(
             dbc.Card([
                 dbc.CardBody([
-                    html.H4("Players who turn wins into shots"),
+                    html.H4("Players who turn wins into shots", className="card-title text-muted fw-bold"),
                     dash_table.DataTable(
                         id='player-table',
                         columns = [{"name": "Player", "id": "Player"}, {"name": "Team", "id": "Team"}, 
@@ -220,15 +224,18 @@ def update_graphs(team, player, strength):
         x = "rate",
         y = "win_type",
         orientation="h",
-        title="What happened right before the win",
-        text="rate",
-        color_discrete_sequence=["#1F4E8C"]
+        color_discrete_sequence=["#1F4E8C"],
+        custom_data=["wins", "total_goals", "med_seconds_to_shot"]
     )
-    fig_bar.update_layout(yaxis={"categoryorder": "trace"}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=0, r=80, t=50, b=0))
+    fig_bar.update_layout(yaxis={"categoryorder": "trace"}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=80, r=80, t=10, b=0), height=500, bargap=0.55)
     x_max = event_shot_rate["rate"].max() if not event_shot_rate.empty else 1
-    fig_bar.update_xaxes(visible=False, title="", range=[0, x_max * 1.25])
+    fig_bar.update_xaxes(visible=False, title="", range=[0, x_max * 1.5])
     fig_bar.update_yaxes(visible=True, title="")
-    fig_bar.update_traces(texttemplate="%{text:.1%}",textposition="outside")
+    fig_bar.update_traces(
+       texttemplate="%{x:.1%} · %{customdata[0]} wins",
+       hovertemplate="%{y}<br>%{x:.1%} led to a shot<br>%{customdata[0]} wins · %{customdata[1]} goals<br>Median %{customdata[2]}s to shot<extra></extra>",
+       textposition="outside", marker_line_width = 0, width=0.45
+   )
 
     summary_data = summary
     wins = f"{summary_data.wins:,.0f}"
