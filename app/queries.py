@@ -120,3 +120,26 @@ def get_shot_rate_by_how_puck_win(con: duckdb.DuckDBPyConnection, team: str | No
             ORDER BY rate
     """, {"team":team, "player":player, "strength":strength})
     return result.df()
+
+def get_summary(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None) -> pd.Series:
+
+    result = con.execute("""
+            SELECT
+                COUNT(*)                                                       AS wins,
+                COUNT(*) FILTER (WHERE fw.event = 'Puck Recovery')              AS recoveries,
+                COUNT(*) FILTER (WHERE fw.event = 'Takeaway')                   AS takeaways,
+                COUNT(*) FILTER (WHERE fw.is_goal)                              AS goals,
+                COUNT(*) FILTER (WHERE fw.is_goal AND fw.win_type = 'Rebound')  AS rebound_goals,
+                COALESCE(SUM(led_to_shot::INT), 0)                              AS shots,
+                AVG(led_to_shot::INT)                                           AS rate,
+                MEDIAN(seconds_to_shot)                                         AS med_secs
+            FROM warehouse.fact_puck_wins fw
+            JOIN warehouse.dim_team t
+                ON t.team_key = fw.event_team_key
+            JOIN warehouse.dim_player p
+                ON p.player_key = fw.event_player_key
+            WHERE ($team IS NULL OR t.team_name = $team)
+                AND ($player IS NULL OR p.player_name = $player)
+                AND ($strength IS NULL or fw.strength_state = $strength)
+    """, {"team":team, "player":player, "strength":strength})
+    return result.df().iloc[0]

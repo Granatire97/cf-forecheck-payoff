@@ -5,26 +5,11 @@ import plotly.express as px
 from dash.dash_table.Format import Format, Scheme
 from pipeline.config import DB_PATH
 import pandas as pd
-from app.queries import get_puck_wins, get_shot_rate_grid, get_teams, get_strength_state, get_players, get_player_table, get_shot_rate_by_how_puck_win
+from app.queries import get_shot_rate_grid, get_teams, get_strength_state, get_players, get_player_table, get_shot_rate_by_how_puck_win, get_summary
 from app.components.rink import build_rink
 
 with duckdb.connect(str(DB_PATH), read_only=True) as con:
-    # KPI values
-    wins, rate, win_rate_count = con.execute(
-        "SELECT COUNT(*), AVG(led_to_shot::INT), COUNT(*) * AVG(led_to_shot::INT) FROM warehouse.fact_puck_wins"
-    ).fetchone()
-    seconds_to_shot = con.execute(
-        "SELECT MEDIAN(seconds_to_shot::INT) FROM warehouse.fact_puck_wins"
-    ).fetchone()
-    goals = con.execute(
-        "SELECT COUNT(*) FROM warehouse.fact_puck_wins WHERE is_goal"
-    ).fetchone()
-    rebound = con.execute(
-        "SELECT COUNT(*) FROM warehouse.fact_puck_wins WHERE is_goal AND win_type = 'Rebound'"
-    ).fetchone()
-
     # Dfs for graphs/visuals/tables
-    df = get_puck_wins(con)
     teams = get_teams(con)
     strength = get_strength_state(con)
     players = get_players(con)
@@ -132,8 +117,8 @@ app.layout = dbc.Container([
             dbc.Card([
                 dbc.CardHeader("OZ puck wins"),
                 dbc.CardBody([
-                    html.H1(f"{wins:,}"),
-                    html.P("Placeholder", style = {'fontSize': '12px'}, className="card-text"),
+                    html.H1(id="kpi-wins"),
+                    html.P(id="kpi-wins-sub", style = {'fontSize': '12px'}, className="card-text"),
                 ]),
             ]),
             width=3
@@ -142,8 +127,8 @@ app.layout = dbc.Container([
             dbc.Card([
                 dbc.CardHeader("Led to a shot within 10s"),
                 dbc.CardBody([
-                    html.H1(f"{rate:.1%}"),
-                    html.P(f"{win_rate_count:.0f} of {wins} wins", style = {'fontSize': '12px'}, className="card-text"),
+                    html.H1(id="kpi-rate"),
+                    html.P(id="kpi-rate-sub", style = {'fontSize': '12px'}, className="card-text"),
                 ]),
             ]),
             width=3
@@ -152,7 +137,7 @@ app.layout = dbc.Container([
             dbc.Card([
                 dbc.CardHeader("Median time to shot"),
                 dbc.CardBody([
-                    html.H1(f"{seconds_to_shot[0]:.1f}s"),
+                    html.H1(id="kpi-med-secs"),
                     html.P("Most shots come fast or not at all", style = {'fontSize': '12px'}, className="card-text"),
                 ]),
             ]),
@@ -162,8 +147,8 @@ app.layout = dbc.Container([
             dbc.Card([
                 dbc.CardHeader("Goals off puck wins"),
                 dbc.CardBody([
-                    html.H1(goals),
-                    html.P(f"{rebound[0]} of them off rebounds", style = {'fontSize': '12px'}, className="card-text"),
+                    html.H1(id="kpi-goals"),
+                    html.P(id="kpi-goals-sub", style = {'fontSize': '12px'}, className="card-text"),
                 ]),
             ]),
             width=3
@@ -206,7 +191,6 @@ app.layout = dbc.Container([
                         filter_action="native",
                         sort_action="native",
                         sort_mode="multi",
-                        column_selectable="single",
                         row_selectable=False,
                         page_action="native", 
                         page_current= 0,
@@ -218,12 +202,16 @@ app.layout = dbc.Container([
     ], className="mt-4")
 ])
 
-@app.callback(Output("hockey-rink", "figure"), Output("shot-rate-won", "figure"), Output("player-table", "data"), Input("team", "value"), Input("player", "value"), Input("strength", "value"))
+@app.callback(Output("hockey-rink", "figure"), Output("shot-rate-won", "figure"), Output("player-table", "data"), 
+              Output("kpi-wins", "children"), Output("kpi-wins-sub", "children"), Output("kpi-rate", "children"), Output("kpi-rate-sub", "children"), 
+              Output("kpi-med-secs", "children"), Output("kpi-goals", "children"), Output("kpi-goals-sub", "children"), 
+              Input("team", "value"), Input("player", "value"), Input("strength", "value"))
 def update_graphs(team, player, strength):
     with duckdb.connect(str(DB_PATH), read_only=True) as con2:
         df2 = get_shot_rate_grid(con2, team, player, strength)
         event_shot_rate = get_shot_rate_by_how_puck_win(con2, team, player, strength)
         player_table_df = get_player_table(con2, team, player, strength)
+        summary = get_summary(con2, team, player, strength)
 
     fig_rink = build_rink(df2)
 
@@ -242,7 +230,16 @@ def update_graphs(team, player, strength):
     fig_bar.update_yaxes(visible=True, title="")
     fig_bar.update_traces(texttemplate="%{text:.1%}",textposition="outside")
 
-    return fig_rink, fig_bar, player_table_df.to_dict('records')
+    summary_data = summary
+    wins = f"{summary_data.wins:,.0f}"
+    wins_sub = f"{summary_data.recoveries:,.0f} recoveries · {summary_data.takeaways:,.0f} takeaways"
+    rate = f"{summary_data.rate:.1%}" if pd.notna(summary_data.rate) else "-"
+    rate_sub = f"{summary_data.shots:,.0f} of {summary_data.wins:,.0f} wins"
+    med_time = f"{summary_data.med_secs:.1f}s" if pd.notna(summary_data.med_secs) else "-"
+    goal = f"{summary_data.goals:,.0f}"
+    goal_sub = f"{summary_data.rebound_goals:,.0f} of them off rebounds"
+
+    return fig_rink, fig_bar, player_table_df.to_dict('records'), wins, wins_sub, rate, rate_sub, med_time, goal, goal_sub
 
 if __name__ == "__main__":
     app.run(debug=True)
