@@ -1,7 +1,7 @@
 import duckdb
 import pandas as pd
 
-def get_shot_rate_grid(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None) -> pd.DataFrame:
+def get_shot_rate_grid(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None, win_type: str | None = None) -> pd.DataFrame:
 
     result = con.execute("""
             WITH grid AS (
@@ -18,6 +18,7 @@ def get_shot_rate_grid(con: duckdb.DuckDBPyConnection, team: str | None = None, 
             WHERE ($team IS NULL OR t.team_name = $team)
                 AND ($player IS NULL OR p.player_name = $player)
                 AND ($strength IS NULL or warehouse.fact_puck_wins.strength_state = $strength)
+                AND ($win_type IS NULL or warehouse.fact_puck_wins.win_type = $win_type)
             GROUP BY bx, by_
             )
             SELECT
@@ -25,7 +26,7 @@ def get_shot_rate_grid(con: duckdb.DuckDBPyConnection, team: str | None = None, 
                 125 + bx * 15 + 7.5 - 100 AS cx,
                 by_ * 17 + 8.5 - 42.5 AS cy
             FROM grid
-    """, {"team":team, "player":player, "strength":strength})
+    """, {"team":team, "player":player, "strength":strength, "win_type":win_type})
     return result.df()
 
 def get_teams(con: duckdb.DuckDBPyConnection) -> list[str]:
@@ -52,7 +53,18 @@ def get_players(con: duckdb.DuckDBPyConnection) -> list[str]:
     """)
     return [r[0] for r in result.fetchall()]
 
-def get_player_table(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None) -> pd.DataFrame:
+def get_win_type(con: duckdb.DuckDBPyConnection) -> list[str]:
+
+    result = con.execute("""
+            SELECT DISTINCT
+                fw.win_type
+            FROM warehouse.fact_puck_wins fw
+            ORDER BY fw.win_type
+
+    """)
+    return [r[0] for r in result.fetchall()]
+
+def get_player_table(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None, win_type: str | None = None) -> pd.DataFrame:
 
     result = con.execute("""
             SELECT 
@@ -69,12 +81,13 @@ def get_player_table(con: duckdb.DuckDBPyConnection, team: str | None = None, pl
             WHERE ($team IS NULL OR t.team_name = $team)
                 AND ($player IS NULL OR p.player_name = $player)
                 AND ($strength IS NULL or fw.strength_state = $strength)
+                AND ($win_type IS NULL or fw.win_type = $win_type)
             GROUP BY p.player_name, p.team_name
             HAVING COUNT(*) >= CASE WHEN $player IS NOT NULL THEN 1
                         WHEN $strength IS NOT NULL THEN 5
                         ELSE 20 END
             ORDER BY COUNT(*) DESC
-    """, {"team":team, "player":player, "strength":strength})
+    """, {"team":team, "player":player, "strength":strength, "win_type":win_type})
     return result.df()
 
 def get_shot_rate_by_how_puck_win(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None) -> pd.DataFrame:
@@ -99,7 +112,7 @@ def get_shot_rate_by_how_puck_win(con: duckdb.DuckDBPyConnection, team: str | No
     """, {"team":team, "player":player, "strength":strength})
     return result.df()
 
-def get_summary(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None) -> pd.Series:
+def get_summary(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None, win_type: str | None = None) -> pd.Series:
 
     result = con.execute("""
             SELECT
@@ -119,5 +132,26 @@ def get_summary(con: duckdb.DuckDBPyConnection, team: str | None = None, player:
             WHERE ($team IS NULL OR t.team_name = $team)
                 AND ($player IS NULL OR p.player_name = $player)
                 AND ($strength IS NULL or fw.strength_state = $strength)
-    """, {"team":team, "player":player, "strength":strength})
+                AND ($win_type IS NULL or fw.win_type = $win_type)
+    """, {"team":team, "player":player, "strength":strength, "win_type":win_type})
     return result.df().iloc[0]
+
+def get_end_reason_on_win(con: duckdb.DuckDBPyConnection, team: str | None = None, player: str | None = None, strength: str | None = None, win_type: str | None = None) -> pd.DataFrame:
+
+    result = con.execute("""
+            SELECT
+                w.end_reason,
+                COUNT(*) AS totals
+            FROM warehouse.fact_puck_wins w
+            JOIN warehouse.dim_team t
+                ON t.team_key = w.event_team_key
+            JOIN warehouse.dim_player p
+                ON p.player_key = w.event_player_key
+            WHERE ($team IS NULL OR t.team_name = $team)
+                AND ($player IS NULL OR p.player_name = $player)
+                AND ($strength IS NULL or w.strength_state = $strength)
+                AND ($win_type IS NULL or w.win_type = $win_type)
+            GROUP BY w.end_reason
+            ORDER BY totals DESC
+    """, {"team":team, "player":player, "strength":strength, "win_type":win_type})
+    return result.df()
