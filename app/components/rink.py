@@ -11,5 +11,5 @@ def build_rink(df2):
         colorscale="Blues", opacity=0.75,
         colorbar=dict(title='Shot Rate', tickformat=".0%"), 
         hovertemplate="%{z:.0%} led to a shot<br>%{customdata} wins<extra></extra>",
-        texttemplate="%{z:.0%}",))
+        texttemplate="%{z:.0%}", zmin=0.3, zmax=0.9))
     return rink_fig
