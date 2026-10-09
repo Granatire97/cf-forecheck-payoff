@@ -40,7 +40,7 @@ def get_teams(con: duckdb.DuckDBPyConnection) -> list[str]:
     """)
     return [r[0] for r in result.fetchall()]
 
-def get_players(con: duckdb.DuckDBPyConnection) -> list[str]:
+def get_players(con: duckdb.DuckDBPyConnection, team: str | None = None) -> list[str]:
 
     result = con.execute("""
             SELECT DISTINCT
@@ -48,9 +48,10 @@ def get_players(con: duckdb.DuckDBPyConnection) -> list[str]:
             FROM warehouse.fact_puck_wins pw
             JOIN warehouse.dim_player p 
                 ON p.player_key = pw.event_player_key
+            WHERE $team IS NULL OR p.team_name = $team
             ORDER BY p.player_name
 
-    """)
+    """, {"team":team})
     return [r[0] for r in result.fetchall()]
 
 def get_win_type(con: duckdb.DuckDBPyConnection) -> list[str]:

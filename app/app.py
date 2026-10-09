@@ -1,6 +1,6 @@
 import duckdb
 import dash_bootstrap_components as dbc
-from dash import Dash, html, dcc, Input, Output, dash_table
+from dash import Dash, html, dcc, Input, Output, dash_table, State
 import plotly.express as px
 from dash.dash_table.Format import Format, Scheme
 from pipeline.config import DB_PATH
@@ -193,7 +193,7 @@ app.layout = dbc.Container([
                     html.Div(
                         [
                             html.H4("Players who turn wins into shots", className="card-title text-muted mb-0 fw-bold"),
-                            html.Span("Min. 20 OZ Wins (5 when filtered)", className="text-muted", style = {'fontSize': '12px'}),
+                            html.Span("Min. 20 OZ Wins (5 when filtered)", className="text-muted", style = {'fontSize': '10px'}),
                         ],
                             className="d-flex justify-content-between align-items-center",
                     ),
@@ -245,12 +245,12 @@ def update_graphs(team, player, strength, win_type):
     fig_rink = build_rink(df2)
 
     # win type graph
+    colors=["#1F4E8C" if win_type in (None, wt) else "#BFC9D6" for wt in event_shot_rate["win_type"]]
     fig_bar = px.bar(
         event_shot_rate,
         x = "rate",
         y = "win_type",
         orientation="h",
-        color_discrete_sequence=["#1F4E8C"],
         custom_data=["wins", "total_goals", "med_seconds_to_shot"]
     )
     fig_bar.update_layout(yaxis={"categoryorder": "trace"}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=80, r=80, t=10, b=0), height=500, bargap=0.55)
@@ -260,7 +260,7 @@ def update_graphs(team, player, strength, win_type):
     fig_bar.update_traces(
        texttemplate="%{x:.1%} · %{customdata[0]} wins",
        hovertemplate="%{y}<br>%{x:.1%} led to a shot<br>%{customdata[0]} wins · %{customdata[1]} goals<br>Median %{customdata[2]}s to shot<extra></extra>",
-       textposition="outside", marker_line_width = 0, width=0.45, marker=dict(cornerradius=30)
+       textposition="outside", marker_line_width = 0, width=0.45, marker=dict(cornerradius=30), marker_color=colors
    )
     
     # end reason graph
@@ -305,6 +305,10 @@ def update_graphs(team, player, strength, win_type):
     goal_sub = f"{summary_data.rebound_goals:,.0f} of them off rebounds"
 
     return fig_rink, fig_bar, player_table_df.to_dict('records'), fig_bar_stack, wins, wins_sub, rate, rate_sub, med_time, goal, goal_sub
-
+@app.callback(Output("player", "options"), Output("player", "value"), Input("team", "value"), State("player", "value"))
+def update_player_options(team, current):
+    with duckdb.connect(str(DB_PATH), read_only=True) as con3:
+        options = get_players(con3, team)
+    return options, current if current in options else None
 if __name__ == "__main__":
     app.run(debug=True)
