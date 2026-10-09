@@ -84,7 +84,7 @@ def get_player_table(con: duckdb.DuckDBPyConnection, team: str | None = None, pl
                 AND ($win_type IS NULL or fw.win_type = $win_type)
             GROUP BY p.player_name, p.team_name
             HAVING COUNT(*) >= CASE WHEN $player IS NOT NULL THEN 1
-                        WHEN $strength IS NOT NULL THEN 5
+                        WHEN $strength IS NOT NULL OR $win_type IS NOT NULL THEN 5
                         ELSE 20 END
             ORDER BY COUNT(*) DESC
     """, {"team":team, "player":player, "strength":strength, "win_type":win_type})

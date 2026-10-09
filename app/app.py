@@ -193,7 +193,7 @@ app.layout = dbc.Container([
                     html.Div(
                         [
                             html.H4("Players who turn wins into shots", className="card-title text-muted mb-0 fw-bold"),
-                            html.Span("Min. 20 OZ Wins", className="text-muted", style = {'fontSize': '12px'}),
+                            html.Span("Min. 20 OZ Wins (5 when filtered)", className="text-muted", style = {'fontSize': '12px'}),
                         ],
                             className="d-flex justify-content-between align-items-center",
                     ),
@@ -264,30 +264,37 @@ def update_graphs(team, player, strength, win_type):
    )
     
     # end reason graph
+    bar_stack_labels = {"shot":"Shot", "opponent_possession":"Opponent got it back",
+                        "time_expired":"Kept it, no shot in 10s", 
+                        "stoppage":"Whistle"}
+    bar_stack_colors = {"Shot":"#1D4ED8", "Opponent got it back": "#D97715",
+                        "Kept it, no shot in 10s":"#CBD5E1", "Whistle":"#475569"}
     end_reason["Chart"] = ""
+    end_reason['label'] = end_reason['end_reason'].map(bar_stack_labels)
+    end_reason['pct'] = end_reason['totals'] / end_reason['totals'].sum()
+    end_reason["pct_label"] = end_reason["pct"].apply(lambda p: f"{p:.0%}" if p >= 0.05 else "")
     fig_bar_stack = px.bar(
         end_reason,
         y = "Chart",
         x = "totals",
-        color = "end_reason",
+        color = "label",
         orientation="h",
-        color_discrete_sequence=["#D97715", "#1D4ED8", "#CBD5E1", "#475569"],
-        category_orders={"end_reason": end_reason["end_reason"].tolist()}
+        text="pct_label",
+        color_discrete_map=bar_stack_colors,
+        category_orders={"label": list(bar_stack_colors)},
+        custom_data=["totals", "pct"],
     )
     fig_bar_stack.update_layout(yaxis={"categoryorder": "trace"}, xaxis=dict(visible=False),yaxis_title=None, plot_bgcolor="white", 
                                 margin=dict(l=20, r=20, t=40, b=100), height=300, bargap=0.55, 
                                 legend=dict(orientation="v", yanchor="top", y=0.25, xanchor="left", x=0, title_text=""))
     fig_bar_stack.update_traces(
-       marker_line_width = 0, width=0.4, marker=dict(cornerradius=30)
+       marker_line_width = 0, 
+       width=0.4, 
+       marker=dict(cornerradius=30),
+       texttemplate="%{text}", textposition="inside",
+       hovertemplate="%{fullData.name}<br>%{customdata[0]} wins · %{customdata[1]:.1%}<extra></extra>",
    )
-#     #x_max = end_reason["totals"].max() if not end_reason.empty else 1
-#     fig_bar_stack.update_xaxes(visible=False, title="",)
-#     fig_bar_stack.update_yaxes(visible=False, title="")
-#     fig_bar_stack.update_traces(
-#        texttemplate="%{y:.1%} · %{customdata[0]} totals",
-#        hovertemplate="%{customdata[0]} totals ·rate<extra></extra>",
-#        textposition="outside", marker_line_width = 0, width=0.45
-#    )
+    
     summary_data = summary
     wins = f"{summary_data.wins:,.0f}"
     wins_sub = f"{summary_data.recoveries:,.0f} recoveries · {summary_data.takeaways:,.0f} takeaways"

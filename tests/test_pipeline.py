@@ -193,6 +193,27 @@ def test_no_shot_event_when_win_did_not_lead_to_shot(con):
     assert with_shot == 0
 
 
+def test_fact_puck_wins_end_reason_is_classified(con):
+    """How a possession ended must stay inside the categories the app charts."""
+    reasons = {
+        row[0]
+        for row in con.execute(
+            "SELECT DISTINCT end_reason FROM warehouse.fact_puck_wins"
+        ).fetchall()
+    }
+    assert reasons <= {"shot", "opponent_possession", "time_expired", "stoppage"}
+
+
+def test_shot_end_reason_matches_led_to_shot(con):
+    """A shot end reason is recorded exactly when the win led to a shot."""
+    mismatched = con.execute("""
+        SELECT COUNT(*)
+        FROM warehouse.fact_puck_wins
+        WHERE (end_reason = 'shot') IS DISTINCT FROM led_to_shot
+    """).fetchone()[0]
+    assert mismatched == 0
+
+
 def test_overall_shot_rate(con):
     """The share of puck wins that become a shot is the rate the app leads with."""
     rate = con.execute(
